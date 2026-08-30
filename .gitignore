@@ -1,0 +1,11 @@
+# Conversation backups may contain private data.
+*.codexbackup
+
+# Incomplete files created during export, import, or compilation.
+*.partial-*
+*.building-*
+
+# Local diagnostic artifacts.
+*.log
+.icon-preview*.png
+.roundtrip-probe*
