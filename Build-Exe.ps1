@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-    [string]$OutputPath
+    [string]$OutputPath,
+    [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')]
+    [string]$Version = '1.2.0.0'
 )
 
 Set-StrictMode -Version 2.0
@@ -167,7 +169,7 @@ try {
         -Description 'Local Codex conversation manager for Windows' `
         -Company 'Codex Folder Management' `
         -Copyright 'Codex Folder Management' `
-        -Version '1.2.0.0'
+        -Version $Version
 
     if (-not (Test-Path -LiteralPath $temporaryOutput)) {
         throw 'PS2EXE finished without creating the executable.'
@@ -175,9 +177,16 @@ try {
 
     Move-Item -LiteralPath $temporaryOutput -Destination $outputPath -Force
     $executable = Get-Item -LiteralPath $outputPath
+    $checksum = (Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $checksumPath = "$outputPath.sha256"
+    $checksumWriter = New-Object IO.StreamWriter($checksumPath, $false, (New-Object Text.UTF8Encoding($false)))
+    try { $checksumWriter.WriteLine("$checksum  $($executable.Name)") } finally { $checksumWriter.Dispose() }
+
     Write-Host "Executable created: $($executable.FullName)"
     Write-Host "Size: $([Math]::Round($executable.Length / 1KB, 1)) KB"
     Write-Host "Version: $($executable.VersionInfo.FileVersion)"
+    Write-Host "SHA-256: $checksum"
+    Write-Host "Checksum file: $checksumPath"
     Write-Host "PNG logo: $logoPath"
 }
 finally {

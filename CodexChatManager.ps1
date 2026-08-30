@@ -11,6 +11,14 @@ $indexPath = Join-Path $codexRoot 'session_index.jsonl'
 $sessionsPath = Join-Path $codexRoot 'sessions'
 $archivePath = Join-Path $codexRoot 'archived_sessions'
 $backupPath = Join-Path $codexRoot 'chat-manager-backups'
+$script:appVersion = '1.2.0.0'
+try {
+    $currentExecutable = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    if ([IO.Path]::GetFileNameWithoutExtension($currentExecutable) -eq 'CodexChatManager') {
+        $compiledVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($currentExecutable).FileVersion
+        if ($compiledVersion) { $script:appVersion = $compiledVersion }
+    }
+} catch { }
 
 function Get-SessionIdFromName {
     param([string]$Name)
@@ -183,7 +191,7 @@ function Get-AppServerSessions {
         if (-not $process.Start()) { throw 'Could not start the app-server.' }
 
         $initialize = @{
-            clientInfo = @{ name = 'codex-chat-manager'; version = '1.2.0' }
+            clientInfo = @{ name = 'codex-chat-manager'; version = $script:appVersion }
             capabilities = @{ experimentalApi = $false }
         }
         Send-AppServerRequest -Process $process -RequestId $requestId -Method 'initialize' -Params $initialize | Out-Null
@@ -565,7 +573,7 @@ function Register-ImportedSessions {
 
     try {
         if (-not $process.Start()) { throw 'Could not start the app-server to reindex the conversations.' }
-        $initialize = @{ clientInfo = @{ name = 'codex-chat-manager'; version = '1.2.0' }; capabilities = @{ experimentalApi = $true } }
+        $initialize = @{ clientInfo = @{ name = 'codex-chat-manager'; version = $script:appVersion }; capabilities = @{ experimentalApi = $true } }
         Send-AppServerRequest -Process $process -RequestId $requestId -Method 'initialize' -Params $initialize | Out-Null
         $process.StandardInput.WriteLine('{"method":"initialized","params":{}}')
         $process.StandardInput.Flush()

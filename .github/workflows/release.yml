@@ -1,0 +1,105 @@
+name: Build and publish Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build Windows executable
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the file version from the tag
+        shell: pwsh
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $rawVersion = $env:TAG_NAME.TrimStart('v')
+          if ($rawVersion -notmatch '^\d+\.\d+(?:\.\d+){0,2}$') {
+              throw "Release tags must use vMAJOR.MINOR, vMAJOR.MINOR.PATCH, or vMAJOR.MINOR.PATCH.REVISION. Received: $env:TAG_NAME"
+          }
+
+          $parts = @($rawVersion.Split('.'))
+          while ($parts.Count -lt 4) { $parts += '0' }
+          $fileVersion = $parts -join '.'
+
+          "FILE_VERSION=$fileVersion" >> $env:GITHUB_ENV
+          "DISPLAY_VERSION=$rawVersion" >> $env:GITHUB_ENV
+          "TAG_NAME=$env:TAG_NAME" >> $env:GITHUB_ENV
+          Write-Host "Tag $env:TAG_NAME will produce Windows file version $fileVersion."
+
+      - name: Install PS2EXE
+        shell: powershell
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+              Register-PSRepository -Default
+          }
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name ps2exe -Scope CurrentUser -Repository PSGallery -Force -AllowClobber
+
+      - name: Build and verify the executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path .\dist -Force | Out-Null
+          powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\Build-Exe.ps1 `
+              -OutputPath .\dist\CodexChatManager.exe `
+              -Version $env:FILE_VERSION
+          if ($LASTEXITCODE -ne 0) { throw "Build-Exe.ps1 failed with exit code $LASTEXITCODE." }
+
+          $executable = Get-Item .\dist\CodexChatManager.exe
+          if ($executable.VersionInfo.FileVersion -ne $env:FILE_VERSION) {
+              throw "Expected file version $env:FILE_VERSION but built $($executable.VersionInfo.FileVersion)."
+          }
+          if (-not (Test-Path .\dist\CodexChatManager.exe.sha256)) {
+              throw 'The SHA-256 checksum file was not generated.'
+          }
+
+          Write-Host "Verified $($executable.Name), version $($executable.VersionInfo.FileVersion), $($executable.Length) bytes."
+          Get-Content .\dist\CodexChatManager.exe.sha256
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: CodexChatManager-${{ env.DISPLAY_VERSION }}-windows-x64
+          path: |
+            dist/CodexChatManager.exe
+            dist/CodexChatManager.exe.sha256
+          if-no-files-found: error
+
+      - name: Create or update the GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view $env:TAG_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+              gh release upload $env:TAG_NAME `
+                  .\dist\CodexChatManager.exe `
+                  .\dist\CodexChatManager.exe.sha256 `
+                  --clobber
+          }
+          else {
+              gh release create $env:TAG_NAME `
+                  .\dist\CodexChatManager.exe `
+                  .\dist\CodexChatManager.exe.sha256 `
+                  --verify-tag `
+                  --generate-notes `
+                  --title "Codex Chat Manager $env:DISPLAY_VERSION"
+          }
+          if ($LASTEXITCODE -ne 0) { throw "GitHub release command failed with exit code $LASTEXITCODE." }

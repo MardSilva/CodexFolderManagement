@@ -276,15 +276,16 @@ The build script:
 - Compiles `CodexChatManager.ps1` as a Windows x64 GUI executable.
 - Embeds the icon and version metadata.
 - Disables the console window.
+- Writes a lowercase SHA-256 checksum to `CodexChatManager.exe.sha256`.
 - Builds to a temporary file and replaces the final EXE only after compilation succeeds.
 - Removes incomplete temporary executable files if the build fails.
 
 The current build was tested with PS2EXE `1.0.18` and produces application version `1.2.0.0`.
 
-To write the executable to another path:
+To set the four-part Windows file version and write the executable to another path:
 
 ```powershell
-.\Build-Exe.ps1 -OutputPath .\dist\CodexChatManager.exe
+.\Build-Exe.ps1 -OutputPath .\dist\CodexChatManager.exe -Version 1.2.0.0
 ```
 
 ## Repository layout
@@ -293,7 +294,9 @@ To write the executable to another path:
 |---|---|
 | `CodexChatManager.ps1` | Main application and all conversation-management logic |
 | `CodexChatManager.exe` | Prebuilt unsigned Windows x64 application |
+| `CodexChatManager.exe.sha256` | SHA-256 checksum generated with the executable |
 | `Build-Exe.ps1` | Reproducible PS2EXE build and artwork generator |
+| `.github/workflows/release.yml` | Tag-driven Windows build and GitHub Release automation |
 | `Start-CodexChatManager.cmd` | Development launcher for the PowerShell source |
 | `assets/CodexChatManager.png` | Reusable PNG logo for GitHub, documentation, or packaging |
 | `assets/CodexChatManager.ico` | Windows icon embedded into the executable |
@@ -336,20 +339,35 @@ To write the executable to another path:
 
 ## Publishing a GitHub release
 
+Releases are automated by `.github/workflows/release.yml`. Pushing a version tag starts a clean `windows-latest` runner that installs PS2EXE, derives the Windows file version, builds and verifies the EXE, uploads a workflow artifact, and creates the GitHub Release with generated notes.
+
+Accepted tag formats and their resulting Windows versions:
+
+| Git tag | EXE file version |
+|---|---|
+| `v1.2` | `1.2.0.0` |
+| `v1.2.3` | `1.2.3.0` |
+| `v1.2.3.4` | `1.2.3.4` |
+
+The tag is the release version source of truth. Invalid version tags fail before compilation. The workflow has only the `contents: write` permission required to publish release assets.
+
 Recommended release process:
 
 1. Review and test `CodexChatManager.ps1`.
-2. Run `Build-Exe.ps1` on a clean Windows x64 environment.
-3. Launch the generated EXE and test refresh, selection, backup, and import with non-sensitive test data.
-4. Generate a checksum:
+2. Commit and push the final source to `main`.
+3. Create and push an annotated tag:
 
    ```powershell
-   Get-FileHash .\CodexChatManager.exe -Algorithm SHA256
+   git tag -a v1.2 -m "Codex Chat Manager 1.2"
+   git push origin v1.2
    ```
 
-5. Create a tagged GitHub release matching the application version.
-6. Attach `CodexChatManager.exe` and publish its SHA-256 checksum in the release notes.
+4. Follow the **Build and publish Windows release** workflow in the repository's Actions tab.
+5. Confirm that the release contains both `CodexChatManager.exe` and `CodexChatManager.exe.sha256`.
+6. Download the release asset and test it on Windows.
 7. Never attach real `.codexbackup`, JSONL, database, authentication, or configuration files.
+
+If a workflow is rerun for an existing release, its two generated assets are replaced safely with `--clobber` rather than creating a duplicate release.
 
 The PNG logo can be reused for the repository social preview, release artwork, package listings, or future installer branding.
 
